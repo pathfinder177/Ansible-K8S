@@ -1,0 +1,22 @@
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "{{ harbor_ingress_cert }}"
+  namespace: istio-system
+spec:
+  secretName: ingress-cert-harbor
+  dnsNames:
+  - "{{ harbor_web_harbor }}"
+  issuerRef:
+    name: "{{ cert_manager_external_issuer }}"
+    namespace: cert-manager
+    kind: ClusterIssuer
+  commonName: "{{ harbor_web_harbor }}"
+  acme:
+    config:
+    - http01:
+        ingressClass: istio
+      domains:
+      - "{{ harbor_web_harbor }}"

@@ -1,0 +1,14 @@
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: vsphere
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: csi.vsphere.vmware.com
+reclaimPolicy: "Delete"
+#volumeBindingMode: WaitForFirstConsumer
+parameters:
+  storagepolicyname: "{{ vsphere_cp_storage_policy_name }}"
+  fstype: 

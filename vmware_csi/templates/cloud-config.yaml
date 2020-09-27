@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-config
+  namespace: kube-system
+data:
+  vsphere.conf: |
+    [Global]
+    port = "{{ vsphere_port }}"
+    insecure-flag = "{{ vsphere_cp_csi_insecure_flag }}"
+    secret-name = "{{ vsphere_cp_cpi_secret }}"
+    secret-namespace = "kube-system"
+    ca-file = "/etc/cloud/ca.crt"
+
+    [VirtualCenter "{{ vsphere_cp_vcenter_address }}"]
+    datacenters = "{{ vsphere_datacenter }}"
+    
+    [Workspace]
+    folder = "{{ vsphere_folder }}"

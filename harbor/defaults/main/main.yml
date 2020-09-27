@@ -1,0 +1,12 @@
+---
+
+#Harbor vars
+harbor_values_temporary_file: $HOME/values.yaml
+harbor_namespace: harbor-system
+harbor_image_chart_storage: /data
+
+#Certificates for nodes and docker
+harbor_docker_certs_dir: /etc/docker/certs.d/{{ harbor_external_url }}
+harbor_ingress_cert_location: /etc/docker/certs.d/{{ harbor_external_url }}/cert.pem
+harbor_docker_ca_cert_location: /etc/docker/certs.d/{{ harbor_external_url }}/ca-cert.pem
+harbor_system_ca_cert_location: /etc/pki/ca-trust/source/anchors/ca-cert-manager-cert.pem

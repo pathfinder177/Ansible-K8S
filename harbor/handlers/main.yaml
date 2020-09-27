@@ -1,0 +1,14 @@
+---
+
+- name: docker is restarted
+  service:
+      name: docker
+      state: restarted
+      use: service
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['node'] }}"
+
+- name: ca-trust is updated
+  command: update-ca-trust
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['node'] }}"

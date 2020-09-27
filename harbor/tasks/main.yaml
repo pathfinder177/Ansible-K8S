@@ -1,0 +1,171 @@
+---
+
+#####Docker preparation#####
+
+- name: dir for docker certs is created
+  file:
+    path: "{{ harbor_docker_certs_dir }}"
+    state: directory
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['all'] }}"
+
+- name: harbor cert are created
+  k8s:
+    state: "{{ harbor_istio_resources_state }}"
+    definition: "{{ lookup('template', 'harbor-cert.yaml') }}"
+
+- name: copy ingress harbor cert to docker/certs.d
+  copy:
+    content: "{{ lookup('k8s', kind='secret', namespace='cert-manager', resource_name='cluster-ca')['data']['ca.crt'] | b64decode }}"
+    dest: "{{ harbor_ingress_cert_location }}"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['all'] }}"
+  when: certmanager_le_enabled == false
+
+- name: copy cert-manager CA cert to nodes
+  copy:
+    content: "{{ lookup('k8s', kind='secret', namespace='cert-manager', resource_name='cluster-ca')['data']['ca.crt'] | b64decode }}"
+    dest: "{{ harbor_docker_ca_cert_location }}"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['all'] }}"
+
+- name: copy cert-manager CA cert to nodes
+  copy:
+    content: "{{ lookup('k8s', kind='secret', namespace='cert-manager', resource_name='cluster-ca')['data']['ca.crt'] | b64decode }}"
+    dest: "{{ harbor_system_ca_cert_location }}"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['all'] }}"
+  notify:
+    - ca-trust is updated
+    - docker is restarted
+
+#####Harbor installation#####
+
+- name: harbor repository for helm is added
+  command: helm repo add harbor https://helm.goharbor.io
+
+- name: harbor config is templated to the tmp as temporary file
+  template:
+    src: ../templates/values.yaml
+    dest: "{{ harbor_values_temporary_file }}"
+
+- name: harbor resources are templated
+  k8s:
+    state: "{{ harbor_istio_resources_state }}"
+    definition: "{{ lookup('template', item) }}"
+  loop:
+    - hnamespace.yaml
+    - harbor-vs.yaml
+    - harbor-gw.yaml
+
+- name: HARBOR | Ensure Pod Security Policies for harbor-system namespace
+  k8s:
+    state: present
+    definition: "{{ lookup('template', 'psp-harbor-system.yaml') }}"
+
+- name: create harbor persistent volume claims
+  vars:
+    pvc_name: "{{ item.pvc_name }}"
+    pvc_namespace: "{{ harbor_namespace }}"
+    pvc_selector: "{{ item.pvc_selector }}"
+    pvc_storage_class_name: "{{ item.pvc_storage_class_name }}"
+    pvc_size: "{{ item.pvc_size }}"
+  loop:
+    - { pvc_name: '{{ harbor_pvc_registry_name }}', pvc_storage_class_name: '{{ harbor_pvc_registry_storage_class_name }}', pvc_selector: '{{ harbor_pvc_registry_selector }}', pvc_size: '{{ harbor_pvc_registry_size }}'}
+    - { pvc_name: '{{ harbor_pvc_chartmuseum_name }}', pvc_storage_class_name: '{{ harbor_pvc_chartmuseum_storage_class_name }}', pvc_selector: '{{ harbor_pvc_chartmuseum_selector }}',pvc_size: '{{ harbor_pvc_chartmuseum_size }}'}
+    - { pvc_name: '{{ harbor_pvc_jobservice_name }}', pvc_storage_class_name: '{{ harbor_pvc_jobservice_storage_class_name }}', pvc_selector: '{{ harbor_pvc_jobservice_selector }}', pvc_size: '{{ harbor_pvc_jobservice_size }}'}
+    - { pvc_name: '{{ harbor_pvc_database_name }}', pvc_storage_class_name: '{{ harbor_pvc_database_storage_class_name }}', pvc_selector: '{{ harbor_pvc_database_selector }}', pvc_size: '{{ harbor_pvc_database_size }}'}
+    - { pvc_name: '{{ harbor_pvc_redis_name }}', pvc_storage_class_name: '{{ harbor_pvc_redis_storage_class_name }}', pvc_selector: '{{ harbor_pvc_redis_selector }}', pvc_size: '{{ harbor_pvc_redis_size }}'}
+  k8s:
+    state: present
+    definition: "{{ lookup('template', 'dynamic-pvc.yaml') }}"
+
+- name: harbor from helm chart is installed
+  command: helm upgrade --install harbor harbor/harbor --namespace {{ harbor_namespace }} --version "{{ harbor_chart_version }}" -f "{{ harbor_values_temporary_file }}"
+
+#- name: overriding headers from nginx are commented
+#  k8s:
+#      state: present
+#      definition:
+#        apiVersion: v1
+#        kind: ConfigMap
+#        metadata:
+#          labels:
+#            app: harbor
+#            chart: harbor
+#            heritage: Helm
+#            release: harbor
+#          name: harbor-harbor-nginx
+#          namespace: harbor-system
+#        data:
+#          nginx.conf: |
+#            {{ lookup('file', 'nginx.conf') }}
+
+- name: delete tmp file
+  file:
+    path: "{{ harbor_values_temporary_file }}"
+    state: absent
+
+- name: ensure harbor deployments
+  loop:
+  - harbor-harbor-chartmuseum
+  - harbor-harbor-clair
+  - harbor-harbor-core
+  - harbor-harbor-jobservice
+  - harbor-harbor-nginx
+  - harbor-harbor-portal
+  - harbor-harbor-registry
+  k8s:
+    state: present
+    wait: yes
+    wait_timeout: 600
+    # wait_condition:
+    #   type: Progressing
+    #   status: No
+    #   reason: NewReplicaSetAvailable
+    definition:
+      apiVersion: v1
+      kind: Deployment
+      metadata:
+        name: "{{ item }}"
+        namespace: "{{ harbor_namespace }}"
+      spec: {}
+
+
+- name: OIDC authentication set up
+  retries: 5
+  delay: 1
+  register: harbor_oidc_result
+  until: harbor_oidc_result.status == 200
+  uri:
+    body_format: json
+    body: '{"auth_mode": "oidc_auth","oidc_scope": "openid,profile,email","oidc_name": "https://git.vwgroup.ru","oidc_endpoint": "https://git.vwgroup.ru","oidc_client_id": "{{ harbor_client_secret_id }}","oidc_client_secret": "{{ harbor_client_secret_password }}","oidc_verify_cert": true}'
+    follow_redirects: "yes"
+    force_basic_auth: yes
+    url: "https://{{ harbor_internal_url | default(harbor_external_url) }}/api/configurations"
+    url_password: "{{ harbor_password }}"
+    url_username: "{{ harbor_login }}"
+    headers:
+      Content-Type: application/json
+    method: "PUT"
+    validate_certs: "{{ harbor_validate_certs }}"
+    use_proxy: "{{ harbor_proxy_enabled }}"
+
+- name: scan images automatically for default harbor project set up
+  retries: 5
+  delay: 1
+  register: harbor_autoscan_result
+  until: harbor_autoscan_result.status == 200
+  uri:
+    body_format: json
+    body: '{"metadata":{"auto_scan": "true"}}'
+    follow_redirects: "yes"
+    force_basic_auth: yes
+    url: "https://{{ harbor_internal_url | default(harbor_external_url) }}/api/projects/1"
+    url_password: "{{ harbor_password }}"
+    url_username: "{{ harbor_login }}"
+    headers:
+      Content-Type: application/json
+    method: "PUT"
+    validate_certs: "{{ harbor_validate_certs }}"
+    use_proxy: "{{ harbor_proxy_enabled }}"

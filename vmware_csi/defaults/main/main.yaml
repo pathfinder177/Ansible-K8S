@@ -1,0 +1,24 @@
+---
+
+#Is CP is installed in the cluster
+#For installation set present
+#For deletion set absent
+vsphere_cp_state: present
+
+#Kubelet settings for cloud provider
+#This property allows k8s to works with external cloud provider
+#External cloud provider is out-of-tree
+vsphere_cp_kubelet_extra_args: '"--cgroup-driver=systemd --cloud-provider=external"'
+
+#Define check vCenter security certificate or not
+vsphere_cp_validate_certs_vm_uuid: yes
+
+#CP conf files that creates from templates
+#Cloud Provider Interface Secret name
+vsphere_cp_cpi_secret: "cpi-secret"
+#Define 
+vsphere_cp_csi_insecure_flag: "false"
+#Unique k8s cluster id
+vsphere_cp_cluster_id: "k8s"
+#Name of Container Storage Interface Secret
+vsphere_cp_csi_secret: "vsphere-config-secret"

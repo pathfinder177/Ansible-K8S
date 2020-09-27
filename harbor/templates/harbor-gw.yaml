@@ -1,0 +1,29 @@
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: "{{ harbor_gateway_name }}"
+  namespace: 
+spec:
+  selector:
+    istio: 
+    service.istio.io/canonical-name: 
+  servers:
+  - port:
+      number: 
+      name: http
+      protocol: HTTP
+    hosts:
+    - "{{ harbor_web_harbor }}"
+    tls:
+      httpsRedirect: false
+  - port:
+      number: 
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "{{ harbor_web_harbor }}"
+    tls:
+      credentialName:
+      mode: 
