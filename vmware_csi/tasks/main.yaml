@@ -1,0 +1,90 @@
+---
+
+- name: VSPHERE-CP | Gather ip info
+  setup:
+    gather_subset: network
+  delegate_to: "{{ item }}"
+  delegate_facts: yes
+  when: hostvars[item]['ansible_default_ipv4'] is not defined
+  with_items: "{{groups['all']}}"
+
+- name: VSPHERE-CP | Ensure vsphere url is resolvable
+  lineinfile:
+    dest: "/etc/hosts"
+    line: "{{ vsphere_cp_vcenter_ip }} {{ vsphere_cp_vcenter_address }}"
+    state: present
+    regexp: '.*{{ vsphere_cp_vcenter_address }}$'
+  when: vsphere_cp_vcenter_ip is defined and vsphere_cp_vcenter_ip|length>0
+  tags:
+    - hosts
+
+- name: VSPHERE-CP | Ensure vsphere CA cert is installed on nodes
+  copy:
+    content: "{{ vsphere_cp_ca }}"
+    dest: /etc/pki/ca-trust/source/anchors/{{ vsphere_cp_vcenter_address }}-ca.crt
+  register: vsphere_cp_ca_result
+  when: vsphere_cp_ca is defined and "BEGIN CERTIFICATE" in vsphere_cp_ca
+  tags:
+    - ca-trust
+
+- name: VSPHERE-CP | Ensure system CA trust updated
+  command: update-ca-trust
+  when: vsphere_cp_ca_result is defined and vsphere_cp_ca_result.changed
+  tags:
+    - ca-trust
+
+- name: VSPHERE-CP | cpi resources are created
+  k8s:
+    state: "{{ vsphere_cp_state }}"
+    namespace: kube-system
+    definition: "{{ lookup('template', item) }}"
+  loop:
+    - cloud-config.yaml
+    - cpi-secret.yaml
+  delegate_to: localhost
+  run_once: yes
+  no_log: true
+  tags: tech_password_changed
+
+- name: VSPHERE-CP | cpi manifests are deployed
+  k8s:
+    state: "{{ vsphere_cp_state }}"
+    namespace: kube-system
+    definition: "{{ lookup('file', item) }}"
+  loop:
+    - files/cpi/cloud-controller-manager-roles.yaml
+    - files/cpi/cloud-controller-manager-role-bindings.yaml
+    - files/csi/vsphere-csi-controller-rbac.yaml
+    - psp-vsphere-cp.yaml
+  delegate_to: localhost
+  run_once: yes
+  no_log: true
+
+- name: VSPHERE-CP | csi secret are created
+  k8s:
+    wait: yes
+    state: "{{ vsphere_cp_state }}"
+    namespace: kube-system
+    definition: "{{ lookup('template', item) }}"
+  loop: 
+    - cloud-config-secret.yaml
+    - vsphere-cloud-controller-manager-ds.yaml
+    - csi-secret.yaml
+    - vsphere-csi-controller-ss.yaml
+    - default-storage-class.yaml
+  delegate_to: localhost
+  run_once: yes
+  no_log: true
+  tags: tech_password_changed
+
+- name: VSPHERE-CP | csi manifests are deployed
+  k8s:
+    wait: yes
+    state: "{{ vsphere_cp_state }}"
+    namespace: kube-system
+    definition: "{{ lookup('file', item) }}"
+  loop:
+    - files/csi/vsphere-csi-node-ds.yaml
+  delegate_to: localhost
+  run_once: yes
+  no_log: true

@@ -1,0 +1,11 @@
+---
+
+- name: daemon is restarted
+  systemd:
+    daemon_reload: yes
+
+- name: kubelet is restarted
+  service:
+    name: kubelet
+    state: restarted
+  no_log: true

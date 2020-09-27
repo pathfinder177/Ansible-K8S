@@ -1,0 +1,220 @@
+expose:
+  type: "clusterIP"
+  tls:
+    enabled: false
+    #commonName: "vm.cmx.ru"
+    #secretName: harbor-cert
+  clusterIP:
+    name: harbor
+    ports:
+      httpPort: 80
+      httpsPort: 443
+
+externalURL: https://{{ harbor_external_url }}
+
+persistence:
+  enabled: false
+
+imageChartStorage:
+  type: filesystem
+  filesystem:
+    rootdirectory: "{{ harbor_image_chart_storage }}"
+
+imagePullPolicy: IfNotPresent
+
+updateStrategy:
+  type: Recreate
+
+logLevel: debug
+
+harborAdminPassword: "{{ harbor_password }}"
+
+proxy:
+  httpProxy:
+  httpsProxy:
+  noProxy: 127.0.0.1,localhost,.local,.internal
+  components:
+    - core
+    - jobservice
+    - clair
+
+nginx:
+  image:
+    repository: goharbor/nginx-photon
+    tag: v1.10.0
+  replicas: 0
+  nodeSelector: 
+    beta.kubernetes.io/os: "linux"
+    infra: "true"
+  tolerations: 
+  - effect: "NoSchedule"
+    operator: "Exists"
+    key: "infra"
+  affinity: {}
+  podAnnotations: {}
+
+portal:
+  image:
+    repository: goharbor/harbor-portal
+    tag: v1.10.0
+  replicas: 1
+  nodeSelector: 
+    beta.kubernetes.io/os: "linux"
+    infra: "true"
+  tolerations: 
+  - effect: "NoSchedule" 
+    key: "infra"
+    operator: "Exists"
+  affinity: {}
+  podAnnotations: {}
+
+core:
+  image:
+    repository: goharbor/harbor-core
+    tag: v1.10.0
+  replicas: 1
+  livenessProbe:
+    initialDelaySeconds: 300
+  nodeSelector: 
+    beta.kubernetes.io/os: "linux"
+    infra: "true"
+  tolerations: 
+  - effect: "NoSchedule" 
+    key: "infra"
+    operator: "Exists"
+  affinity: {}
+  podAnnotations: {}
+
+jobservice:
+  image:
+    repository: goharbor/harbor-jobservice
+    tag: v1.10.0
+  replicas: 1
+  maxJobWorkers: 10
+  jobLogger: file
+  nodeSelector: 
+    beta.kubernetes.io/os: "linux"
+    infra: "true"
+  tolerations: 
+  - effect: "NoSchedule" 
+    key: "infra"
+    operator: "Exists"
+  affinity: {}
+  podAnnotations: {}
+
+registry:
+  registry:
+    image:
+      repository: goharbor/registry-photon
+      tag: v2.7.1-patch-2819-2553-v1.10.0
+  controller:
+    image:
+      repository: goharbor/harbor-registryctl
+      tag: v1.9.4-dev
+  replicas: 1
+  nodeSelector: 
+    beta.kubernetes.io/os: "linux"
+    infra: "true"
+  tolerations: 
+  - effect: "NoSchedule" 
+    key: "infra"
+    operator: "Exists"
+  affinity: {}
+  podAnnotations: {}
+
+chartmuseum:
+  enabled: true
+  absoluteUrl: false
+  image:
+    repository: goharbor/chartmuseum-photon
+    tag: v0.9.0-v1.10.0
+  replicas: 1
+  nodeSelector: 
+    beta.kubernetes.io/os: "linux"
+    infra: "true"
+  tolerations: 
+  - effect: "NoSchedule" 
+    key: "infra"
+    operator: "Exists"
+  affinity: {}
+  podAnnotations: {}
+
+notary:
+  enabled: false
+
+clair:
+  enabled: true
+  clair:
+    image:
+      repository: goharbor/clair-photon
+      tag: v2.1.1-v1.10.0
+  adapter:
+    image:
+      repository: goharbor/clair-adapter-photon
+      tag: dev
+  replicas: 1
+  updatersInterval: 12
+  nodeSelector: 
+    beta.kubernetes.io/os: "linux"
+    infra: "true"
+  tolerations: 
+  - effect: "NoSchedule" 
+    key: "infra"
+    operator: "Exists"
+  affinity: {}
+  podAnnotations: {}
+
+database:
+  type: internal
+  internal:
+    image:
+      repository: goharbor/harbor-db
+      tag: v1.10.0
+    initContainerImage:
+      repository: busybox
+      tag: 1.31.1
+    password: {{ harbor_database_internal_password }}
+    nodeSelector: 
+      beta.kubernetes.io/os: "linux"
+      infra: "true"
+    tolerations: 
+    - effect: "NoSchedule" 
+      key: "infra"
+      operator: "Exists"
+    affinity: {}
+  external:
+    host: {{ harbor_database_external_host }}
+    port: "5432"
+    username: {{ harbor_database_external_user }}
+    password: {{ harbor_database_external_password }}
+    coreDatabase: "registry"
+    clairDatabase: "clair"
+    sslmode: "disable"
+  maxIdleConns: 50
+  maxOpenConns: 100
+  podAnnotations: {}
+
+redis:
+  type: internal
+  internal:
+    image:
+      repository: goharbor/redis-photon
+      tag: v1.10.0
+    nodeSelector:
+      beta.kubernetes.io/os: "linux"
+      infra: "true"
+    tolerations: 
+    - effect: "NoSchedule" 
+      key: "infra"
+      operator: "Exists"
+    affinity: {}
+  external:
+    host: {{ harbor_redis_external_host }}
+    port: "6379"
+    coreDatabaseIndex: "0"
+    jobserviceDatabaseIndex: "1"
+    registryDatabaseIndex: "2"
+    chartmuseumDatabaseIndex: "3"
+    clairAdapterIndex: "4"
+    password: {{ harbor_redis_external_password }}
+  podAnnotations: {}
